@@ -1,7 +1,6 @@
 import { connectDB } from '../config/db.js';
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
-
 import User from '../models/User.js';
 import Store from '../models/store.model.js';
 import Product from '../models/Product.js';

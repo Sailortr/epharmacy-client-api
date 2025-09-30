@@ -1,9 +1,5 @@
 import Store from '../models/store.model.js';
 
-/**
- * GET /api/stores
- * Query: q (full-text), page, limit
- */
 export async function listStores(req, res, next) {
   try {
     const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
@@ -44,12 +40,6 @@ export async function listStores(req, res, next) {
   }
 }
 
-/**
- * GET /api/stores/nearest
- * Query: lng, lat, max(=metre), limit, unit(=m|km)
- * Not: Store şemasında 2dsphere index: StoreSchema.index({ location: "2dsphere" })
- *      Koordinat sırası: [lng, lat]
- */
 export async function nearestStores(req, res, next) {
   try {
     const lngN = parseFloat(req.query.lng);
@@ -86,8 +76,8 @@ export async function nearestStores(req, res, next) {
     ]);
 
     const data = raw.map((doc) => {
-      const meters = Math.round(doc.distance); 
-      const km = Math.round((doc.distance / 1000) * 100) / 100; 
+      const meters = Math.round(doc.distance);
+      const km = Math.round((doc.distance / 1000) * 100) / 100;
       return {
         ...doc,
         distanceMeters: meters,
