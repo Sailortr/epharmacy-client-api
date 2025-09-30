@@ -1,5 +1,5 @@
 import Order from '../models/Order.js';
-import Product from '../models/Product.js'; // toplam tutar için opsiyonel
+import Product from '../models/Product.js';
 import { ok, created, badRequest, notFound } from '../utils/responses.js';
 
 export async function createOrder(req, res, next) {
