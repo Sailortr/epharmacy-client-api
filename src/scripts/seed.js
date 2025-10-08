@@ -9,19 +9,20 @@ import Review from '../models/Review.js';
 async function main() {
   await connectDB();
 
-  await Promise.all([
-    User.syncIndexes(),
-    Store.syncIndexes(),
-    Product.syncIndexes(),
-    Review.syncIndexes(),
+  console.log('→ Dropping indexes (safe) ...');
+  await Promise.allSettled([
+    User.collection?.dropIndexes(),
+    Store.collection?.dropIndexes(),
+    Product.collection?.dropIndexes(),
+    Review.collection?.dropIndexes(),
   ]);
 
   console.log('→ Clearing existing data...');
   await Promise.all([
-    User.deleteMany({}),
-    Store.deleteMany({}),
-    Product.deleteMany({}),
     Review.deleteMany({}),
+    Product.deleteMany({}),
+    Store.deleteMany({}),
+    User.deleteMany({}),
   ]);
 
   console.log('→ Inserting seed users...');
@@ -124,11 +125,38 @@ async function main() {
   await Review.create([
     {
       userId: u1._id,
-      storeId: stores[0]._id,
+      productId: products[0]._id,
+      storeId: products[0].storeId,
       rating: 5,
-      comment: 'Çok hızlı servis, teşekkürler!',
+      comment: 'Very fast service, thank you!',
     },
-    { userId: u1._id, storeId: stores[1]._id, rating: 4, comment: 'Stok iyi, fiyatlar makul.' },
+    {
+      userId: u1._id,
+      productId: products[1]._id,
+      storeId: products[1].storeId,
+      rating: 4,
+      comment: 'Good stock, reasonable prices.',
+    },
+  ]);
+
+  console.log('→ Computing product rating summaries...');
+  const summary = await Review.aggregate([
+    { $group: { _id: '$productId', count: { $sum: 1 }, avg: { $avg: '$rating' } } },
+  ]);
+  const bulk = Product.collection.initializeUnorderedBulkOp();
+  summary.forEach((s) => {
+    bulk.find({ _id: s._id }).updateOne({
+      $set: { ratingCount: s.count, ratingAverage: Number(s.avg.toFixed(2)) },
+    });
+  });
+  if (summary.length) await bulk.execute();
+
+  console.log('→ Syncing indexes...');
+  await Promise.all([
+    User.syncIndexes(),
+    Store.syncIndexes(),
+    Product.syncIndexes(),
+    Review.syncIndexes(),
   ]);
 
   console.log('✓ Seed completed.');

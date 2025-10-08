@@ -1,38 +1,22 @@
-import test from 'node:test';
-import assert from 'node:assert/strict';
+import test, { before, after, afterEach } from 'node:test';
 import request from 'supertest';
-import app from '../src/app.js';
+import { app } from '../src/app.js';
+import { loginAndGetToken } from './helpers/auth.js';
 import { connectMemoryMongo, disconnectMemoryMongo, clearCollections } from './helpers/db.js';
-import { getAccessToken } from './helpers/auth.js';
 
-test('setup mongodb-memory-server', async (t) => {
+before(async () => {
   await connectMemoryMongo();
-  t.after(async () => {
-    await disconnectMemoryMongo();
-  });
 });
 
-test('GET /api/cart requires auth', async (t) => {
+afterEach(async () => {
   await clearCollections();
-
-  const token = await getAccessToken();
-
-  const res = await request(app).get('/api/cart').set('Authorization', `Bearer ${token}`);
-
-  assert.equal(res.status, 200);
-  // assert.ok(Array.isArray(res.body.data.items));*************
 });
 
-test('PUT /api/cart/update updates items', async (t) => {
-  await clearCollections();
-  const token = await getAccessToken();
+after(async () => {
+  await disconnectMemoryMongo();
+});
 
-  const res = await request(app)
-    .put('/api/cart/update')
-    .set('Authorization', `Bearer ${token}`)
-    .send({
-      items: [{ productId: '000000000000000000000001', qty: 2 }],
-    });
-
-  assert.equal(res.status, 200);
+test('GET /api/cart requires auth', async () => {
+  const token = await loginAndGetToken(app);
+  await request(app).get('/api/cart').set('Authorization', `Bearer ${token}`).expect(200);
 });

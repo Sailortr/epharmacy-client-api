@@ -4,10 +4,9 @@ import { ok, created, badRequest, notFound } from '../utils/responses.js';
 export async function getMe(req, res, next) {
   try {
     const id = req.user?._id || req.user?.id;
-    if (!id) return badRequest(res, 'Kullanıcı oturumu yok');
-
+    if (!id) return badRequest(res, 'No user login');
     const me = await User.findById(id).select('-password').lean();
-    if (!me) return notFound(res, 'Kullanıcı bulunamadı');
+    if (!me) return notFound(res, 'User not found');
 
     return ok(res, me);
   } catch (e) {
@@ -18,7 +17,7 @@ export async function getMe(req, res, next) {
 export async function updateMe(req, res, next) {
   try {
     const id = req.user?._id || req.user?.id;
-    if (!id) return badRequest(res, 'Kullanıcı oturumu yok');
+    if (!id) return badRequest(res, 'No user login');
 
     const allowed = ['name', 'email', 'phone', 'avatar'];
     const $set = {};

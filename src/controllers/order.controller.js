@@ -30,12 +30,11 @@ export async function createOrder(req, res, next) {
 export async function listMyOrders(req, res, next) {
   try {
     const userId = req.user?._id || req.user?.id;
-    if (!userId) return badRequest(res, 'Kullanıcı oturumu yok');
+    if (!userId) return badRequest(res, 'No user login');
 
     const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 100);
     const skip = (page - 1) * limit;
-
     const [items, total] = await Promise.all([
       Order.find({ user: userId }).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
       Order.countDocuments({ user: userId }),
@@ -67,7 +66,7 @@ export async function listOrders(req, res, next) {
 export async function getOrder(req, res, next) {
   try {
     const order = await Order.findById(req.params.id).lean();
-    if (!order) return notFound(res, 'Sipariş bulunamadı');
+    if (!order) return notFound(res, 'Order not found');
     return ok(res, order);
   } catch (e) {
     next(e);
@@ -78,7 +77,7 @@ export async function updateOrderStatus(req, res, next) {
   try {
     const { status } = req.body || {};
     const allowed = ['pending', 'paid', 'shipped', 'completed', 'cancelled'];
-    if (!allowed.includes(status)) return badRequest(res, 'Geçersiz durum');
+    if (!allowed.includes(status)) return badRequest(res, 'invalid status');
 
     const order = await Order.findByIdAndUpdate(
       req.params.id,
@@ -86,7 +85,7 @@ export async function updateOrderStatus(req, res, next) {
       { new: true },
     ).lean();
 
-    if (!order) return notFound(res, 'Sipariş bulunamadı');
+    if (!order) return notFound(res, 'Order not found');
     return ok(res, order);
   } catch (e) {
     next(e);

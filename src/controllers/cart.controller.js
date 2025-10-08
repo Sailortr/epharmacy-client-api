@@ -95,59 +95,88 @@ export async function checkout(req, res, next) {
   try {
     const userId = req.user.id;
 
-    const cart = await Cart.findOne({ userId }).session(session);
-    if (!cart || cart.items.length === 0) throw createError(400, 'Cart is empty');
+    let cart =
+      (await Cart.findOne({ userId }).session(session)) ||
+      (await Cart.findOne({ user: asId(userId) }).session(session));
 
-    const productIds = cart.items.map((i) => i.productId);
+    if (!cart || !Array.isArray(cart.items) || cart.items.length === 0) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(400).json({ message: 'Cart is empty' });
+    }
+
+    const productIds = cart.items.map((i) => i.productId || i.product);
     const products = await Product.find({ _id: { $in: productIds } }).session(session);
-
     const pmap = new Map(products.map((p) => [String(p._id), p]));
+
     const orderItems = [];
     let orderTotal = 0;
 
     for (const it of cart.items) {
-      const p = pmap.get(String(it.productId));
-      if (!p) throw createError(404, `Product not found: ${it.productId}`);
+      const pid = String(it.productId || it.product);
+      const qty = Number(it.qty ?? it.quantity ?? 0);
+      const priceAtAdd = Number(it.priceAtAdd ?? it.price ?? 0);
+      const p = pmap.get(pid);
 
-      if (p.stock < it.qty) throw createError(409, `Insufficient stock for product ${p._id}`);
-
-      orderTotal += it.qty * it.priceAtAdd;
+      if (!p) {
+        await session.abortTransaction();
+        session.endSession();
+        return res.status(404).json({ message: `Product not found: ${pid}` });
+      }
+      if (!Number.isInteger(qty) || qty <= 0) {
+        await session.abortTransaction();
+        session.endSession();
+        return res.status(400).json({ message: 'Invalid item quantity', productId: pid });
+      }
+      if (p.stock < qty) {
+        await session.abortTransaction();
+        session.endSession();
+        return res.status(409).json({ message: 'Insufficient stock', productId: pid });
+      }
 
       orderItems.push({
-        productId: p._id,
-        title: p.title,
-        qty: it.qty,
-        price: it.priceAtAdd,
+        product: p._id,
+        qty,
+        price: priceAtAdd,
       });
+      orderTotal += qty * priceAtAdd;
     }
 
     if (req.body?.clientTotal != null) {
       const diff = Math.abs(orderTotal - Number(req.body.clientTotal));
-      if (diff > 0.01) throw createError(409, 'Total mismatch, please refresh your cart');
+      if (diff > 0.01) {
+        await session.abortTransaction();
+        session.endSession();
+        return res.status(409).json({ message: 'Total mismatch, please refresh your cart' });
+      }
     }
 
-    const paymentRef = 'PM-' + Math.random().toString(36).slice(2, 10).toUpperCase();
-
-    const bulkOps = cart.items.map((it) => ({
-      updateOne: {
-        filter: { _id: it.productId, stock: { $gte: it.qty } },
-        update: { $inc: { stock: -it.qty } },
-      },
-    }));
+    const bulkOps = cart.items.map((it) => {
+      const pid = it.productId || it.product;
+      const qty = Number(it.qty ?? it.quantity ?? 0);
+      return {
+        updateOne: {
+          filter: { _id: pid, stock: { $gte: qty } },
+          update: { $inc: { stock: -qty } },
+        },
+      };
+    });
     const bulkRes = await Product.bulkWrite(bulkOps, { session });
-
-    if (bulkRes.result && bulkRes.result.nModified !== cart.items.length) {
-      throw createError(409, 'Stock changed, please refresh the cart');
+    const modified =
+      typeof bulkRes.modifiedCount === 'number' ? bulkRes.modifiedCount : bulkRes.result?.nModified;
+    if (modified !== cart.items.length) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(409).json({ message: 'Stock changed, please refresh the cart' });
     }
 
-    const order = await Order.create(
+    const [orderDoc] = await Order.create(
       [
         {
-          userId,
+          user: asId(userId),
           items: orderItems,
-          orderTotal,
+          total: orderTotal,
           status: 'paid',
-          paymentRef,
         },
       ],
       { session },
@@ -157,20 +186,22 @@ export async function checkout(req, res, next) {
     await cart.save({ session });
 
     await session.commitTransaction();
+    session.endSession();
 
-    res.status(201).json({
-      status: 201,
+    return res.status(200).json({
+      status: 200,
       message: 'Checkout successful',
-      data: {
-        orderId: order[0]._id,
-        paymentRef,
-        orderTotal,
-      },
+      data: { orderId: orderDoc.id, total: orderDoc.total },
     });
   } catch (e) {
     await session.abortTransaction();
-    next(e);
-  } finally {
     session.endSession();
+    if (e?.name === 'ValidationError') {
+      return res.status(400).json({ message: e.message });
+    }
+    if (e?.status || e?.statusCode) {
+      return res.status(e.status || e.statusCode).json({ message: e.message });
+    }
+    return res.status(400).json({ message: e.message || 'Checkout failed' });
   }
 }

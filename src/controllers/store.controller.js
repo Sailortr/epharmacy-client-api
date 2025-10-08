@@ -5,7 +5,6 @@ export async function listStores(req, res, next) {
     const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 12, 1), 100);
     const skip = Math.max((page - 1) * limit, 0);
-
     const q = (req.query.q || '').trim();
 
     const filter = { isActive: true };
@@ -44,12 +43,12 @@ export async function nearestStores(req, res, next) {
   try {
     const lngN = parseFloat(req.query.lng);
     const latN = parseFloat(req.query.lat);
-    const maxN = Math.max(parseInt(req.query.max, 10) || 4000, 1); // metre
+    const maxN = Math.max(parseInt(req.query.max, 10) || 4000, 1);
     const limitN = Math.min(Math.max(parseInt(req.query.limit, 10) || 5, 1), 50);
-    const unit = (req.query.unit || 'm').toLowerCase(); // 'm' | 'km'
+    const unit = (req.query.unit || 'm').toLowerCase();
 
     if ([lngN, latN, maxN, limitN].some(Number.isNaN)) {
-      return res.status(400).json({ status: 400, message: 'Geçersiz koordinat/limit' });
+      return res.status(400).json({ status: 400, message: 'Invalid coordinate/limit' });
     }
 
     const raw = await Store.aggregate([

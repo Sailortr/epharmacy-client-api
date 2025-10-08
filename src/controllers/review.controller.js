@@ -1,43 +1,44 @@
 import createError from 'http-errors';
 import mongoose from 'mongoose';
 import Review from '../models/Review.js';
-import Store from '../models/store.model.js';
+import Product from '../models/Product.js';
 
 const toId = (id) => new mongoose.Types.ObjectId(id);
 
 function sortMap(key) {
   switch (key) {
     case 'oldest':
-      return { createdAt: 1 };
+      return { createdAt: 1, _id: 1 };
     case 'rating':
-      return { rating: 1, createdAt: -1 };
+      return { rating: 1, createdAt: -1, _id: 1 };
     case '-rating':
-      return { rating: -1, createdAt: -1 };
+      return { rating: -1, createdAt: -1, _id: 1 };
     case 'newest':
     default:
-      return { createdAt: -1 };
+      return { createdAt: -1, _id: 1 };
   }
 }
 
 export async function listCustomerReviews(req, res, next) {
   try {
-    const { storeId, page, limit, sort } = req.query;
-    const filter = { storeId: toId(storeId) };
+    let { productId, page = 1, limit = 10, sort } = req.query;
+    if (!productId || !mongoose.isValidObjectId(productId)) {
+      throw createError(400, 'Invalid productId');
+    }
 
-    const skip = (page - 1) * limit;
-
+    const pageNum = Math.max(parseInt(page, 10) || 1, 1);
+    const perPage = Math.min(Math.max(parseInt(limit, 10) || 10, 1), 50);
+    const skip = (pageNum - 1) * perPage;
+    const filter = { productId: toId(productId) };
     const [items, total, statsAgg] = await Promise.all([
       Review.find(filter)
         .sort(sortMap(sort))
         .skip(skip)
-        .limit(limit)
+        .limit(perPage)
         .populate({ path: 'userId', select: 'name email', options: { lean: true } })
         .lean(),
       Review.countDocuments(filter),
-      Review.aggregate([
-        { $match: { storeId: toId(storeId) } },
-        { $group: { _id: '$rating', count: { $sum: 1 } } },
-      ]),
+      Review.aggregate([{ $match: filter }, { $group: { _id: '$rating', count: { $sum: 1 } } }]),
     ]);
 
     const distribution = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
@@ -55,10 +56,10 @@ export async function listCustomerReviews(req, res, next) {
         user: it.userId ? { name: it.userId.name, email: it.userId.email } : null,
       })),
       meta: {
-        page,
-        limit,
+        page: pageNum,
+        limit: perPage,
         total,
-        pages: Math.ceil(total / limit),
+        pages: Math.ceil(total / perPage),
         stats: { avgRating, distribution },
       },
     });
@@ -69,32 +70,85 @@ export async function listCustomerReviews(req, res, next) {
 
 export async function createOrUpdateReview(req, res, next) {
   try {
+    const productIdRaw = req.body.productId ?? req.body.product;
+    const ratingRaw = req.body.rating ?? req.body.rate;
+    const comment = req.body.comment;
+
+    if (!productIdRaw || !mongoose.isValidObjectId(productIdRaw)) {
+      throw createError(400, 'Invalid productId');
+    }
+
+    const r = Number(ratingRaw);
+    if (!Number.isFinite(r) || r < 1 || r > 5) {
+      throw createError(400, 'Rating must be between 1 and 5');
+    }
+
     const userId = toId(req.user.id);
-    const { storeId, rating, comment } = req.body;
 
-    const store = await Store.findById(storeId).lean();
-    if (!store || !store.isActive) throw createError(404, 'Store not found');
+    const product = await Product.findById(productIdRaw).lean();
+    if (!product) throw createError(404, 'Product not found');
 
-    const now = new Date();
-    const existing = await Review.findOneAndUpdate(
-      { userId, storeId: toId(storeId) },
-      { $set: { rating, comment }, $setOnInsert: { createdAt: now } },
-      { new: true, upsert: true },
-    ).lean();
+    const existing = await Review.findOne({ userId, productId: product._id }).lean();
+    if (existing) throw createError(409, 'You have already reviewed this product');
 
-    res.status(200).json({
-      status: 200,
-      message: 'Review saved',
+    const safeComment = typeof comment === 'string' ? comment.trim() : undefined;
+
+    const created = await Review.create({
+      userId,
+      productId: product._id,
+      ...(product.storeId ? { storeId: product.storeId } : {}),
+      rating: r,
+      ...(safeComment ? { comment: safeComment } : {}),
+    });
+
+    res.status(201).json({
+      status: 201,
+      message: 'Review created',
       data: {
-        id: existing._id,
-        storeId,
-        rating: existing.rating,
-        comment: existing.comment,
-        updatedAt: existing.updatedAt,
+        id: created._id,
+        productId: String(product._id),
+        rating: created.rating,
+        comment: created.comment ?? null,
+        createdAt: created.createdAt,
       },
     });
+
+    Product.updateOne({ _id: product._id }, [
+      {
+        $set: {
+          ratingCount: { $add: [{ $ifNull: ['$ratingCount', 0] }, 1] },
+          ratingAverage: {
+            $round: [
+              {
+                $cond: [
+                  { $gt: [{ $ifNull: ['$ratingCount', 0] }, 0] },
+                  {
+                    $divide: [
+                      {
+                        $add: [
+                          {
+                            $multiply: [
+                              { $ifNull: ['$ratingAverage', 0] },
+                              { $ifNull: ['$ratingCount', 0] },
+                            ],
+                          },
+                          r,
+                        ],
+                      },
+                      { $add: [{ $ifNull: ['$ratingCount', 0] }, 1] },
+                    ],
+                  },
+                  r,
+                ],
+              },
+              2,
+            ],
+          },
+        },
+      },
+    ]).catch(() => {});
   } catch (e) {
-    if (e.code === 11000) return next(createError(409, 'Duplicate review'));
+    if (e?.code === 11000) return next(createError(409, 'You have already reviewed this product'));
     next(e);
   }
 }

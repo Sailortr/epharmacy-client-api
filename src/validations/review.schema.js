@@ -1,22 +1,20 @@
 import Joi from 'joi';
+import { objectId, page, limit, reviewSort, text, rating } from './_common.js';
 
-export const listCustomerReviewsSchema = Joi.object({
-  query: Joi.object({
-    storeId: Joi.string().hex().length(24).required(),
-    page: Joi.number().integer().min(1).default(1),
-    limit: Joi.number().integer().min(1).max(100).default(10),
-    sort: Joi.string().valid('newest', 'oldest', 'rating', '-rating').default('newest'),
-  }),
-  params: Joi.object({}),
-  body: Joi.object({}),
-});
-
-export const createReviewSchema = Joi.object({
+export const createReviewSchema = {
   body: Joi.object({
-    storeId: Joi.string().hex().length(24).required(),
-    rating: Joi.number().integer().min(1).max(5).required(),
-    comment: Joi.string().trim().max(1000).allow(''),
+    productId: objectId.when('product', { not: Joi.exist(), then: Joi.required() }),
+    product: objectId,
+    rating: rating.required(),
+    comment: text.allow('', null).optional(),
+  }).or('productId', 'product'),
+};
+
+export const listCustomerReviewsSchema = {
+  query: Joi.object({
+    productId: objectId.required(),
+    page,
+    limit,
+    sort: reviewSort,
   }),
-  query: Joi.object({}),
-  params: Joi.object({}),
-});
+};

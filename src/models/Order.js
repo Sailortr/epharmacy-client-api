@@ -5,7 +5,7 @@ const { Schema } = mongoose;
 const ItemSchema = new Schema(
   {
     product: { type: Schema.Types.ObjectId, ref: 'Product', required: true },
-    title: { type: String }, // snapshot (opsiyonel)
+    title: { type: String },
     qty: { type: Number, default: 1, min: 1 },
     price: { type: Number, required: true, min: 0 },
   },

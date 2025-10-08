@@ -12,10 +12,15 @@ const productSchema = new mongoose.Schema(
     storeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Store' },
     rxRequired: { type: Boolean, default: false },
     description: String,
+
+    ratingCount: { type: Number, default: 0 },
+    ratingAverage: { type: Number, default: 0 },
   },
   { timestamps: true },
 );
 
 productSchema.index({ brand: 1, price: 1, tags: 1 });
+
+productSchema.index({ ratingAverage: -1, ratingCount: -1 });
 
 export default mongoose.model('Product', productSchema);

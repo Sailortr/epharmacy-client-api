@@ -1,17 +1,28 @@
 import mongoose from 'mongoose';
-const { Schema } = mongoose;
 
-const reviewSchema = new Schema(
+const { Schema, Types } = mongoose;
+
+const ReviewSchema = new Schema(
   {
-    userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-    storeId: { type: Schema.Types.ObjectId, ref: 'Store', required: true },
+    userId: { type: Types.ObjectId, ref: 'User', required: true, index: true },
+    productId: { type: Types.ObjectId, ref: 'Product', required: true, index: true },
+    storeId: { type: Types.ObjectId, ref: 'Store' }, // opsiyonel
     rating: { type: Number, min: 1, max: 5, required: true },
-    comment: { type: String, default: '' },
+    comment: { type: String, trim: true },
   },
   { timestamps: true },
 );
 
-reviewSchema.index({ userId: 1, storeId: 1 }, { unique: true });
-reviewSchema.index({ storeId: 1, createdAt: -1 });
+ReviewSchema.index(
+  { userId: 1, productId: 1 },
+  {
+    unique: true,
+    name: 'uniq_user_product',
+    partialFilterExpression: {
+      userId: { $type: 'objectId' },
+      productId: { $type: 'objectId' },
+    },
+  },
+);
 
-export default mongoose.model('Review', reviewSchema);
+export default mongoose.model('Review', ReviewSchema);
