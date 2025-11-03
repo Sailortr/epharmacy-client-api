@@ -4,6 +4,7 @@ An Express + Mongoose backend for an e-commerce pharmacy experience: user regist
 
 > **Repository:** https://github.com/Sailortr/epharmacy-client-api.git
 > **Swagger UI (local):** http://localhost:3000/api-docs
+> **LIVE RENDER.COM :** https://epharmacy-client-api.onrender.com/DOCS/
 
 ---
 
