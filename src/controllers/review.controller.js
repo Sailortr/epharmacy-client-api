@@ -152,3 +152,28 @@ export async function createOrUpdateReview(req, res, next) {
     next(e);
   }
 }
+
+export async function getHomepageTestimonials(req, res, next) {
+  try {
+    console.log('📋 Fetching homepage testimonials...');
+
+    const testimonials = await Review.find({})
+      .select('name testimonial _id')
+      .limit(3)
+      .sort({ createdAt: -1 })
+      .lean();
+
+    console.log(`✅ Found ${testimonials.length} testimonials`);
+
+    res.json({
+      status: 200,
+      data: testimonials,
+      meta: {
+        total: testimonials.length,
+      },
+    });
+  } catch (error) {
+    console.error('❌ Error fetching testimonials:', error);
+    next(error);
+  }
+}
